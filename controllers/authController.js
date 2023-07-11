@@ -1,31 +1,118 @@
 import userModel from "../models/userModel.js";
 import orderModel from "../models/orderModel.js";
-
 import { comparePassword, hashPassword } from "./../helpers/authHelper.js";
 import JWT from "jsonwebtoken";
+import validator from 'validator';
+
 
 export const registerController = async (req, res) => {
   try {
-    const { name, email, password, phone, address, answer } = req.body;
+    const { name, email, password,confirmPassword, phone, address, answer } = req.body;
     //validations
-    if (!name) {
+
+    //name
+    if (!validator.isLength(name,{min:1})) {
       return res.send({ error: "Name is Required" });
     }
-    if (!email) {
+    // Additional name validations
+    if (!/^[a-zA-Z\s]+$/.test(name)) {
+     return res.send({ error: "Name can only contain letters and spaces" });
+    }
+
+    if (name.length > 50) {
+    return res.send({ error: "Name must be less than or equal to 50 characters" });
+    }
+
+    // If all validation checks pass, the code continues execution
+
+    //email
+    if (!validator.isEmail(email)) {
       return res.send({ message: "Email is Required" });
     }
-    if (!password) {
-      return res.send({ message: "Password is Required" });
+    
+
+   // Additional email validations
+   if (email.length > 100) {
+   return res.send({ message: "Email must be less than or equal to 100 characters" });
+   }
+
+    const emailParts = email.split("@");
+    const domain = emailParts[1];
+
+    // Domain-specific validations
+    if (domain.length > 50) {
+    return res.send({ message: "Domain must be less than or equal to 50 characters" });
     }
-    if (!phone) {
+
+    // Check for specific domain names
+    const allowedDomains = ["gmail.com", "yahoo.com", "companyname.com"];
+    if (!allowedDomains.includes(domain)) {
+    return res.send({ message: "Email domain is not allowed" });
+   }
+
+    // Validate local part of the email (part before the @ symbol)
+    const localPart = emailParts[0];
+    if (localPart.length > 64) {
+    return res.send({ message: "Local part must be less than or equal to 64 characters" });
+    }
+
+   // Check for special characters in the local part
+   const specialCharactersRegex = /[!#$%^&*()+=\-[\]\\';,/{}|":<>?~_]/;
+   if (specialCharactersRegex.test(localPart)) {
+   return res.send({ message: "Local part contains invalid characters" });
+   }
+
+ 
+    //password
+    if (!validator.isLength(password,{min:6})) {
+      return res.send({ message: "Password must be atleast 6 characters long" });
+    }
+    if (!/[A-Z]/.test(password)) {
+      return res.send({ message: 'Password must contain at least one capital letter' });
+    }
+    
+    if (!/\d/.test(password)) {
+      return res.send({ message: 'Password must contain at least one number' });
+    }
+    //confirm password
+    if (password !== confirmPassword) {
+      return res.send({message:"Password and confirm password do not match"});
+      
+    }
+
+    // If all validation checks pass, the code continues execution
+
+    //phone
+    if (!validator.isMobilePhone(phone, 'any')) {
       return res.send({ message: "Phone no is Required" });
     }
-    if (!address) {
+    if (!validator.isLength(address,{min:1})) {
       return res.send({ message: "Address is Required" });
     }
-    if (!answer) {
+    if (!validator.isAlphanumeric(address)) {
+      return res.status(400).send({ message: "Address should only contain alphanumeric characters" });
+    }
+
+    if (!validator.isLength(answer,{min:1})) {
       return res.send({ message: "Answer is Required" });
     }
+
+
+
+    //send verification email
+    const mailOptions = {
+      from: "sender@example.com",
+      to: email,
+      subject: "Verify your email",
+      text: "Please verify your email",
+      html: "<p>Please verify your email</p>",
+    };
+
+    await sendEmail(mailOptions);
+    console.log("Verification email sent successfully");
+
+
+
     //check user
     const exisitingUser = await userModel.findOne({ email });
     //exisiting user
@@ -44,6 +131,7 @@ export const registerController = async (req, res) => {
       phone,
       address,
       password: hashedPassword,
+      confirmPassword,
       answer,
     }).save();
 
@@ -56,37 +144,47 @@ export const registerController = async (req, res) => {
     console.log(error);
     res.status(500).send({
       success: false,
-      message: "Errro in Registeration",
+      message: "Error in Registeration",
       error,
     });
   }
 };
 
+
+
 //POST LOGIN
 export const loginController = async (req, res) => {
   try {
     const { email, password } = req.body;
-    //validation
-    if (!email || !password) {
+     //validation
+     if (!email || !password) {
       return res.status(404).send({
         success: false,
         message: "Invalid email or password",
       });
     }
+
     //check user
     const user = await userModel.findOne({ email });
+    console.log('User:', user);
+
     if (!user) {
       return res.status(404).send({
         success: false,
         message: "Email is not registerd",
       });
     }
+    
     const match = await comparePassword(password, user.password);
+    console.log('Password match:', match);
+
     if (!match) {
+      console.log('Password match:', match);
       return res.status(200).send({
         success: false,
         message: "Invalid Password",
       });
+      
     }
     //token
     const token = await JWT.sign({ _id: user._id }, process.env.JWT_SECRET, {
@@ -111,7 +209,7 @@ export const loginController = async (req, res) => {
       success: false,
       message: "Error in login",
       error,
-    });
+    }); 
   }
 };
 
@@ -121,7 +219,7 @@ export const forgotPasswordController = async (req, res) => {
   try {
     const { email, answer, newPassword } = req.body;
     if (!email) {
-      res.status(400).send({ message: "Email is required" });
+      res.status(400).send({ message: "Emai is required" });
     }
     if (!answer) {
       res.status(400).send({ message: "answer is required" });
@@ -129,6 +227,12 @@ export const forgotPasswordController = async (req, res) => {
     if (!newPassword) {
       res.status(400).send({ message: "New Password is required" });
     }
+
+    
+    
+    
+
+
     //check
     const user = await userModel.findOne({ email, answer });
     //validation
@@ -138,12 +242,19 @@ export const forgotPasswordController = async (req, res) => {
         message: "Wrong Email Or Answer",
       });
     }
-    const hashed = await hashPassword(newPassword);
-    await userModel.findByIdAndUpdate(user._id, { password: hashed });
+     // Send the password reset email
+    await sendEmail(mailOptions);
+    console.log("Password reset email sent successfully");
+
+    // Send a response to the client
     res.status(200).send({
       success: true,
-      message: "Password Reset Successfully",
+      message: "Password reset email sent successfully",
     });
+
+
+
+
   } catch (error) {
     console.log(error);
     res.status(500).send({
@@ -151,8 +262,12 @@ export const forgotPasswordController = async (req, res) => {
       message: "Something went wrong",
       error,
     });
-  }
+  } 
+  
+
 };
+
+
 
 //test controller
 export const testController = (req, res) => {
